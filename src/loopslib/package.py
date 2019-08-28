@@ -44,6 +44,7 @@ class LoopPackage(object):
                     'MissingDownloadOnly': False,
                     'NeverUpdateLegacy': False,
                     'PackageID': None,
+                    'PackageName': None,
                     'PackageVersion': '0.0.0',
                     'DownloadURL': None,
                     'LocalDownloadURL': None,

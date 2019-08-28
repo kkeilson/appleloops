@@ -1,15 +1,16 @@
 """Used to determine which optional packages belong to which 'pack' per release."""
 # pylint: disable=too-many-locals
+from pprint import pprint
 
 
 class OptionPack(object):
     """Attributes for the 'collection packs' of packages in an Application."""
-    def __init__(self, source, release):
+    def __init__(self, source, release, packages):
         self._source = source
         self._release = release.replace('.plist', '')
 
         self._content = self._source.get('Content', None)
-        self._packages = self._source.get('Packages', None)
+        self._packages = packages
 
         self._optional_packages = set()
 
@@ -17,7 +18,8 @@ class OptionPack(object):
         # Mandatory packages in these option packs _must_ be installed
         # anyway.
         for _pkg in self._packages:
-            if not self._packages[_pkg].get('IsMandatory', False):
+            if not _pkg.IsMandatory:
+                # _pkg_name = _pkg_name.replace('MAContent10_AssetPack_', '')
                 self._optional_packages.add(_pkg)
 
         # In Logic Pro X & MainStage source files, the 'Content' key is a dict.
@@ -39,70 +41,51 @@ class OptionPack(object):
         result = list()
 
         if self._content:
-            _rp = None
+            for _option_pack in self._content:
+                _pack_name = _option_pack.get('Name', None)
+                _pack_subc = _option_pack.get('SubContent', None)
 
-            for _opt_pack in self._content:
-                _description = None
-                _locale = None
+                if not _pack_subc:  # No 'sub content' packages to worry about, i.e. GarageBand
+                    _result = dict()  # Empty dict for results that meet our criteria of not 'IsMandatory'
+                    _pkgs = set()  # Empty set to put package objects into
 
-                _name = _opt_pack.get('Name', None)  # Option Pack 'name'.
-                _packages = _opt_pack.get('Packages', None)  # Pkgs in the opt. pack.
-                _sub_content = _opt_pack.get('SubContent', None)  # Some are broken up into sub opt. packs.
+                    _option_pack_packages = _option_pack.get('Packages', None)
 
-                if _sub_content:
-                    _pack = dict()
-
-                    for _sp in _sub_content:
-                        _sp_desc = None
-                        _sp_name = _sp.get('Name', None)
-                        _sp_pkgs = _sp.get('Packages', None)
-                        _sp_locl = _sp.get('_LOCALIZABLE_', None)
-                        _packages = set()
-
-                        if _sp_pkgs:
-                            _packages = {_pkg for _pkg in _sp_pkgs if _pkg in self._optional_packages}
-
-                        if _sp_locl:
-                            for _i in _sp_locl:
-                                for _k, _v in _i.items():
-                                    if _k == 'Description':
-                                        _sp_desc = _v.strip()
-                                        break
-
-                        if _packages:
-                            _pack['Name'] = _sp_name
-                            _pack['Description'] = _sp_desc
-                            _pack['Packages'] = _packages
-
-                            _rp = Pack(**_pack)
-
-                    if _rp:
-                        result.append(_rp)
-                elif not _sub_content and _packages:
-                    _pack = dict()
-                    _locale = _opt_pack.get('_LOCALIZABLE_', None)
-
-                    if _packages:
-                        _pkgs = {_pkg for _pkg in _packages if _pkg in self._optional_packages}
-
-                    if _locale:
-                        for _item in _locale:
-                            for _k, _v in _item.items():
-                                if _k == 'Description':
-                                    _description = _v.strip()
-                                    break
+                    if _option_pack_packages:
+                        for _package in _option_pack_packages:
+                            for _package_obj in self._optional_packages:
+                                if _package_obj.PackageName == _package:
+                                    _pkgs.add(_package_obj)
 
                     if _pkgs:
-                        _pack['Description'] = _description
-                        _pack['Name'] = _name
-                        _pack['Packages'] = _pkgs
+                        _result[_pack_name] = _pkgs
+                        result.append(_result)
+                elif _pack_subc:  # Logic Pro X/MainStage 3 have opt packages that have sub packages
+                    for _pack in _pack_subc:
+                        _sub_pack_name = _pack.get('Name', None)
+                        _result = dict()  # Empty dict for results that meet our criteria of not 'IsMandatory'
+                        _pkgs = set()  # Empty set to put package objects into
 
-                        _rp = Pack(**_pack)
+                        _option_pack_packages = _pack.get('Packages', None)
 
-                    if _rp:
-                        result.append(_rp)
+                        if _option_pack_packages:
+                            for _package in _option_pack_packages:
+                                for _package_obj in self._optional_packages:
+                                    if _package_obj.PackageName == _package:
+                                        _pkgs.add(_package_obj)
 
-        return result
+                        if _pkgs:
+                            _result[_sub_pack_name] = _pkgs
+                            result.append(_result)
+        # print(len(result))
+        # pkgs = set()
+        # for item in result:
+        #     for k, v in item.items():
+        #         for p in v:
+        #             pkgs.add(p)
+        # print(len(pkgs))
+
+        return NotImplemented
     # pylint: enable=too-many-branches
     # pylint: enable=too-many-nested-blocks
 
@@ -112,7 +95,8 @@ class Pack(object):
     def __init__(self, **kwargs):
         _valid_kwargs = {'Name': None,
                          'Description': None,
-                         'Packages': None}
+                         'Packages': None,
+                         'Release': None}
 
         for kwarg, value in _valid_kwargs.items():
             if kwarg in kwargs.keys():
@@ -125,14 +109,23 @@ class Pack(object):
     def __hash__(self):
         """Hash a tuple (immutable) containing the pack 'Name' attribute."""
         if isinstance(self, Pack):
-            return hash(('Name', self.Name))
+            _pkgs = ', '.join(self.Packages)
+            _str = '{} - {} - {} - {}'.format(self.Name,
+                                              self.Description,
+                                              _pkgs,
+                                              self.Release)
+
+            return hash(('Pack', _str))
         else:
             return NotImplemented
 
     def __eq__(self, other):
         """Used for testing equality of a pack instance based on the 'Name' attribute."""
         if isinstance(self, Pack):
-            return self.Name == other.Name
+            return (self.Name == other.Name and
+                    self.Description == other.Description and
+                    self.Packages == other.Packages and
+                    self.Release == other.Release)
         else:
             return NotImplemented
 
@@ -140,7 +133,10 @@ class Pack(object):
         """Used for testing 'not' equality of a pack instance based on the 'Name' attribute.
         Implemented for Python 2.7 compatability."""
         if isinstance(self, Pack):
-            return not self.Name == other.Name
+            return not (self.Name == other.Name and
+                        self.Description == other.Description and
+                        self.Packages == other.Packages and
+                        self.Release == other.Release)
         else:
             return NotImplemented
     # pylint: enable=no-member

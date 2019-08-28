@@ -41,6 +41,7 @@ class Application(object):
 
         # Empty attr for option packs.
         self.option_packs = None
+        self.option_pack_packages = set()
 
         if self.is_installed:
             self._resource_file_path = os.path.join(self._file_path, config.RESOURCES_PATH)
@@ -132,6 +133,10 @@ class Application(object):
                 for _pkg in _root['Packages']:
                     _new_pkg = _root['Packages'][_pkg].copy()  # Work on copy
 
+                    # Create a new key called 'PackageName' that
+                    # contains the value '_pkg' for use with content packs.
+                    _new_pkg['PackageName'] = _pkg
+
                     if _bad_wolf_fixes:
                         _bwd = _bad_wolf_fixes.get(_pkg, None)  # A dictionary from '_bad_wolf_fixes'
 
@@ -147,26 +152,43 @@ class Application(object):
                         result.add(_pkg_obj)
                     # pylint: enable=no-member
 
-                # Now process option packs
-                self.option_packs = option_packs.OptionPack(source=_root, release=_basename).option_packs
+        # Now process option packs
+        if result:
+            self.option_packs = option_packs.OptionPack(source=_root,
+                                                        release=_basename,
+                                                        packages=result).option_packs
+
+        return result
+
+    def _get_mandatory_pkgs(self):
+        """Returns the mandatory packages as objects in a set."""
+        result = None
+
+        # result = set([_pkg for _pkg in self._get_packages() if _pkg.IsMandatory])
+        result = {_pkg for _pkg in self._get_packages() if _pkg.IsMandatory}  # set
 
         return result
 
     @property
     def mandatory_pkgs(self):
-        """Returns the mandatory packages as objects in a set."""
+        """Returns mandatory packages."""
+        result = self._get_mandatory_pkgs()
+
+        return result
+
+    def _get_optional_pkgs(self):
+        """Returns the optional packages as objects in a set."""
         result = None
 
-        result = set([_pkg for _pkg in self._get_packages() if _pkg.IsMandatory])
+        # result = set([_pkg for _pkg in self._get_packages() if not _pkg.IsMandatory])
+        result = {_pkg for _pkg in self._get_packages() if not _pkg.IsMandatory}  # set
 
         return result
 
     @property
     def optional_pkgs(self):
-        """Returns the optional packages as objects in a set."""
-        result = None
-
-        result = set([_pkg for _pkg in self._get_packages() if not _pkg.IsMandatory])
+        """Returns optional packages."""
+        result = self._get_optional_pkgs()
 
         return result
 # pylint: enable=too-many-instance-attributes
